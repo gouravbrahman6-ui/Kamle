@@ -1,0 +1,318 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- GLOBAL PRIMITIVES ---
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+    function incoming() {
+      return request.resource.data;
+    }
+    function existing() {
+      return resource.data;
+    }
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function isBoundedString(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+    function isValidTimestamp(ts) {
+      return ts is timestamp && ts <= request.time;
+    }
+    function isBoundedUidList(list, minSize, maxSize) {
+      return list is list && list.size() >= minSize && list.size() <= maxSize &&
+             (list.size() == 0 || list[0] is string);
+    }
+
+    // --- VALIDATION HELPERS ---
+    function isValidUserPublic(data) {
+      return isBoundedString(data.userId, 1, 128) &&
+             isBoundedString(data.displayName, 1, 60) &&
+             isBoundedString(data.handle, 2, 40) &&
+             data.publicKeyBase64 is string && data.publicKeyBase64.size() >= 10 && data.publicKeyBase64.size() <= 500 &&
+             isBoundedString(data.keyFingerprint, 4, 64) &&
+             data.online is bool &&
+             data.lastSeenVisibility in ['EVERYONE', 'CONTACTS', 'NOBODY'] &&
+             data.discoverable is bool &&
+             (!('bio' in data) || isBoundedString(data.bio, 0, 200)) &&
+             (!('avatarPreset' in data) || isBoundedString(data.avatarPreset, 1, 40)) &&
+             (!('avatarBase64' in data) || (data.avatarBase64 is string && data.avatarBase64.size() <= 300000)) &&
+             (!('lastSeenAt' in data) || isValidTimestamp(data.lastSeenAt)) &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidUserPrivate(data) {
+      return isBoundedString(data.userId, 1, 128) &&
+             data.phoneVerified is bool &&
+             (!('email' in data) || isBoundedString(data.email, 0, 160)) &&
+             (!('phoneNumber' in data) || isBoundedString(data.phoneNumber, 0, 30)) &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidContact(data) {
+      return isBoundedString(data.userId, 1, 128) &&
+             isBoundedString(data.contactUid, 1, 128) &&
+             isBoundedString(data.contactName, 1, 60) &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidConversation(data) {
+      return data.conversationType in ['DIRECT', 'GROUP'] &&
+             isBoundedString(data.title, 1, 80) &&
+             isBoundedString(data.createdBy, 1, 128) &&
+             isBoundedUidList(data.memberUids, 1, 50) &&
+             isBoundedUidList(data.adminUids, 1, 20) &&
+             isBoundedString(data.lastMessagePreview, 0, 300) &&
+             data.lastMessageType in ['NONE', 'TEXT', 'IMAGE', 'VIDEO', 'DOCUMENT', 'CALL'] &&
+             isBoundedString(data.lastSenderId, 1, 128) &&
+             (!('wrappedGroupKeys' in data) || data.wrappedGroupKeys is map) &&
+             (!('memberNames' in data) || data.memberNames is map) &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidChatMessage(data) {
+      return isBoundedString(data.conversationId, 1, 128) &&
+             isBoundedString(data.senderId, 1, 128) &&
+             isBoundedString(data.senderName, 1, 60) &&
+             isBoundedUidList(data.memberUids, 1, 50) &&
+             data.messageType in ['TEXT', 'IMAGE', 'VIDEO', 'DOCUMENT', 'CALL'] &&
+             data.encryptedPayload is string && data.encryptedPayload.size() >= 1 && data.encryptedPayload.size() <= 400000 &&
+             data.encrypted is bool &&
+             data.attachmentSizeBytes is int && data.attachmentSizeBytes >= 0 && data.attachmentSizeBytes <= 25000000 &&
+             (!('attachmentName' in data) || isBoundedString(data.attachmentName, 0, 200)) &&
+             (!('attachmentMime' in data) || isBoundedString(data.attachmentMime, 0, 120)) &&
+             (!('encryptedMediaBase64' in data) || (data.encryptedMediaBase64 is string && data.encryptedMediaBase64.size() <= 700000)) &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidStatusUpdate(data) {
+      return isBoundedString(data.userId, 1, 128) &&
+             isBoundedString(data.authorName, 1, 60) &&
+             isBoundedString(data.authorAvatarPreset, 1, 40) &&
+             data.statusType in ['TEXT', 'IMAGE'] &&
+             isBoundedString(data.caption, 0, 500) &&
+             isBoundedString(data.backgroundHex, 1, 20) &&
+             data.audience in ['PUBLIC', 'PRIVATE'] &&
+             isBoundedUidList(data.viewerUids, 0, 100) &&
+             (!('imageBase64' in data) || (data.imageBase64 is string && data.imageBase64.size() <= 400000)) &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidCallSession(data) {
+      return isBoundedString(data.callerId, 1, 128) &&
+             isBoundedString(data.callerName, 1, 60) &&
+             isBoundedString(data.calleeId, 1, 128) &&
+             isBoundedString(data.calleeName, 1, 60) &&
+             isBoundedString(data.conversationId, 1, 128) &&
+             isBoundedUidList(data.memberUids, 2, 2) &&
+             data.callType in ['AUDIO', 'VIDEO'] &&
+             data.status in ['RINGING', 'ACTIVE', 'ENDED', 'DECLINED', 'MISSED'] &&
+             data.qualityTier in ['HD_720P', 'FHD_1080P', 'DATA_SAVER'] &&
+             isBoundedString(data.e2eeFingerprint, 4, 64) &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    // --- 1. PUBLIC PROFILES & PRESENCE ---
+    match /users_public/{userId} {
+      allow get: if isSignedIn() && isValidId(userId);
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || resource.data.discoverable == true);
+
+      allow create: if isSignedIn() &&
+                       isValidId(userId) &&
+                       request.auth.uid == userId &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll(['userId', 'displayName', 'handle', 'publicKeyBase64', 'keyFingerprint', 'online', 'lastSeenVisibility', 'discoverable', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'displayName', 'handle', 'bio', 'avatarPreset', 'avatarBase64', 'publicKeyBase64', 'keyFingerprint', 'online', 'lastSeenVisibility', 'discoverable', 'lastSeenAt', 'createdAt', 'updatedAt']) &&
+                       isValidUserPublic(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(userId) &&
+                       request.auth.uid == userId &&
+                       isValidUserPublic(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       (
+                         incoming().diff(existing()).affectedKeys().hasOnly(['online', 'lastSeenAt', 'updatedAt']) ||
+                         incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'handle', 'bio', 'avatarPreset', 'avatarBase64', 'publicKeyBase64', 'keyFingerprint', 'lastSeenVisibility', 'discoverable', 'online', 'lastSeenAt', 'updatedAt'])
+                       );
+
+      allow delete: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
+    }
+
+    // --- 2. PRIVATE USER PII ---
+    match /users_private/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
+      allow list: if isSignedIn() && request.auth.uid == userId;
+
+      allow create: if isSignedIn() &&
+                       isValidId(userId) &&
+                       request.auth.uid == userId &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll(['userId', 'phoneVerified', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'email', 'phoneNumber', 'phoneVerified', 'createdAt', 'updatedAt']) &&
+                       isValidUserPrivate(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(userId) &&
+                       request.auth.uid == userId &&
+                       isValidUserPrivate(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['email', 'phoneNumber', 'phoneVerified', 'updatedAt']);
+
+      allow delete: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
+    }
+
+    // --- 3. USER-SCOPED CONTACTS ---
+    match /users/{userId}/contacts/{contactId} {
+      allow get: if isSignedIn() && isValidId(userId) && isValidId(contactId) && request.auth.uid == userId;
+      allow list: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
+
+      allow create: if isSignedIn() &&
+                       isValidId(userId) &&
+                       isValidId(contactId) &&
+                       request.auth.uid == userId &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll(['userId', 'contactUid', 'contactName', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'contactUid', 'contactName', 'createdAt', 'updatedAt']) &&
+                       isValidContact(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(userId) &&
+                       isValidId(contactId) &&
+                       request.auth.uid == userId &&
+                       isValidContact(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().contactUid == existing().contactUid &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['contactName', 'updatedAt']);
+
+      allow delete: if isSignedIn() && isValidId(userId) && isValidId(contactId) && request.auth.uid == userId;
+    }
+
+    // --- 4. CONVERSATIONS (DM & GROUP) ---
+    match /conversations/{conversationId} {
+      allow get: if isSignedIn() && isValidId(conversationId) && request.auth.uid in existing().memberUids;
+      allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+
+      allow create: if isSignedIn() &&
+                       isValidId(conversationId) &&
+                       incoming().createdBy == request.auth.uid &&
+                       request.auth.uid in incoming().memberUids &&
+                       request.auth.uid in incoming().adminUids &&
+                       incoming().keys().hasAll(['conversationType', 'title', 'createdBy', 'memberUids', 'adminUids', 'lastMessagePreview', 'lastMessageType', 'lastSenderId', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['conversationType', 'title', 'createdBy', 'memberUids', 'adminUids', 'lastMessagePreview', 'lastMessageType', 'lastSenderId', 'wrappedGroupKeys', 'memberNames', 'createdAt', 'updatedAt']) &&
+                       isValidConversation(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(conversationId) &&
+                       request.auth.uid in existing().memberUids &&
+                       isValidConversation(incoming()) &&
+                       incoming().createdBy == existing().createdBy &&
+                       incoming().conversationType == existing().conversationType &&
+                       incoming().createdAt == existing().createdAt &&
+                       (
+                         // Any member posting a message updates lastMessage metadata
+                         incoming().diff(existing()).affectedKeys().hasOnly(['lastMessagePreview', 'lastMessageType', 'lastSenderId', 'updatedAt']) ||
+                         // Group admins managing title, members, or wrapped keys
+                         (request.auth.uid in existing().adminUids && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'memberUids', 'adminUids', 'wrappedGroupKeys', 'memberNames', 'updatedAt']))
+                       );
+
+      allow delete: if isSignedIn() && isValidId(conversationId) && request.auth.uid in existing().adminUids;
+
+      // --- 4a. ENCRYPTED MESSAGES SUBCOLLECTION ---
+      match /messages/{messageId} {
+        allow get: if isSignedIn() && isValidId(conversationId) && isValidId(messageId) && request.auth.uid in existing().memberUids;
+        allow list: if isSignedIn() && isValidId(conversationId) && request.auth.uid in resource.data.memberUids;
+
+        allow create: if isSignedIn() &&
+                         isValidId(conversationId) &&
+                         isValidId(messageId) &&
+                         incoming().senderId == request.auth.uid &&
+                         incoming().conversationId == conversationId &&
+                         request.auth.uid in incoming().memberUids &&
+                         incoming().keys().hasAll(['conversationId', 'senderId', 'senderName', 'memberUids', 'messageType', 'encryptedPayload', 'encrypted', 'attachmentSizeBytes', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['conversationId', 'senderId', 'senderName', 'memberUids', 'messageType', 'encryptedPayload', 'encrypted', 'attachmentName', 'attachmentMime', 'attachmentSizeBytes', 'encryptedMediaBase64', 'createdAt', 'updatedAt']) &&
+                         isValidChatMessage(incoming()) &&
+                         exists(/databases/$(database)/documents/conversations/$(conversationId)) &&
+                         request.auth.uid in get(/databases/$(database)/documents/conversations/$(conversationId)).data.memberUids;
+
+        allow update: if false;
+
+        allow delete: if isSignedIn() &&
+                         isValidId(conversationId) &&
+                         isValidId(messageId) &&
+                         existing().senderId == request.auth.uid;
+      }
+    }
+
+    // --- 5. STATUS UPDATES (STORIES) ---
+    match /status_updates/{statusId} {
+      allow get: if isSignedIn() && isValidId(statusId) && (existing().userId == request.auth.uid || existing().audience == 'PUBLIC');
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || resource.data.audience == 'PUBLIC');
+
+      allow create: if isSignedIn() &&
+                       isValidId(statusId) &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll(['userId', 'authorName', 'authorAvatarPreset', 'statusType', 'caption', 'backgroundHex', 'audience', 'viewerUids', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'authorName', 'authorAvatarPreset', 'statusType', 'caption', 'backgroundHex', 'imageBase64', 'audience', 'viewerUids', 'createdAt', 'updatedAt']) &&
+                       isValidStatusUpdate(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(statusId) &&
+                       isValidStatusUpdate(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       (
+                         (existing().userId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['caption', 'audience', 'updatedAt'])) ||
+                         (existing().audience == 'PUBLIC' && incoming().diff(existing()).affectedKeys().hasOnly(['viewerUids', 'updatedAt']))
+                       );
+
+      allow delete: if isSignedIn() && isValidId(statusId) && existing().userId == request.auth.uid;
+    }
+
+    // --- 6. AUDIO & VIDEO CALL SIGNALING ---
+    match /calls/{callId} {
+      allow get: if isSignedIn() && isValidId(callId) && request.auth.uid in existing().memberUids;
+      allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+
+      allow create: if isSignedIn() &&
+                       isValidId(callId) &&
+                       incoming().callerId == request.auth.uid &&
+                       request.auth.uid in incoming().memberUids &&
+                       incoming().status == 'RINGING' &&
+                       incoming().keys().hasAll(['callerId', 'callerName', 'calleeId', 'calleeName', 'conversationId', 'memberUids', 'callType', 'status', 'qualityTier', 'e2eeFingerprint', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['callerId', 'callerName', 'calleeId', 'calleeName', 'conversationId', 'memberUids', 'callType', 'status', 'qualityTier', 'e2eeFingerprint', 'createdAt', 'updatedAt']) &&
+                       isValidCallSession(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(callId) &&
+                       request.auth.uid in existing().memberUids &&
+                       !(existing().status in ['ENDED', 'DECLINED', 'MISSED']) &&
+                       isValidCallSession(incoming()) &&
+                       incoming().callerId == existing().callerId &&
+                       incoming().calleeId == existing().calleeId &&
+                       incoming().conversationId == existing().conversationId &&
+                       incoming().callType == existing().callType &&
+                       incoming().e2eeFingerprint == existing().e2eeFingerprint &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['status', 'qualityTier', 'updatedAt']);
+
+      allow delete: if false;
+    }
+  }
+}

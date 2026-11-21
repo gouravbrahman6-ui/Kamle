@@ -1,0 +1,163 @@
+{
+  "entities": {
+    "UserPublic": {
+      "title": "UserPublic",
+      "description": "Public discoverable profile, online presence, last-seen privacy, and ECDH public key for E2EE.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Owner Firebase Auth UID." },
+        "displayName": { "type": "string", "description": "User display name." },
+        "handle": { "type": "string", "description": "Unique lowercase handle without @." },
+        "bio": { "type": "string", "description": "Short profile about text." },
+        "avatarPreset": { "type": "string", "description": "Preset avatar style key." },
+        "avatarBase64": { "type": "string", "description": "Optional compressed avatar image Base64." },
+        "publicKeyBase64": { "type": "string", "description": "X.509 ECDH P-256 public key in Base64." },
+        "keyFingerprint": { "type": "string", "description": "Short SHA-256 safety number fingerprint." },
+        "online": { "type": "boolean", "description": "Current real-time online state." },
+        "lastSeenVisibility": { "type": "string", "enum": ["EVERYONE", "CONTACTS", "NOBODY"], "description": "Who can view last seen and online state." },
+        "discoverable": { "type": "boolean", "description": "Whether user appears in friend directory." },
+        "lastSeenAt": { "type": "string", "format": "date-time", "description": "Server timestamp of last activity." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation server timestamp." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Last update server timestamp." }
+      },
+      "required": ["userId", "displayName", "handle", "publicKeyBase64", "keyFingerprint", "online", "lastSeenVisibility", "discoverable", "createdAt", "updatedAt"]
+    },
+    "UserPrivate": {
+      "title": "UserPrivate",
+      "description": "Owner-only PII storing email and phone verification metadata.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Owner Firebase Auth UID." },
+        "email": { "type": "string", "description": "User email address." },
+        "phoneNumber": { "type": "string", "description": "Optional E.164 phone number." },
+        "phoneVerified": { "type": "boolean", "description": "Whether phone verification step was completed." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation server timestamp." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Last update server timestamp." }
+      },
+      "required": ["userId", "phoneVerified", "createdAt", "updatedAt"]
+    },
+    "Contact": {
+      "title": "Contact",
+      "description": "Saved friend contact under a user's private contacts subcollection.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Owner UID." },
+        "contactUid": { "type": "string", "description": "Friend's Firebase Auth UID." },
+        "contactName": { "type": "string", "description": "Display alias for the friend." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation server timestamp." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Last update server timestamp." }
+      },
+      "required": ["userId", "contactUid", "contactName", "createdAt", "updatedAt"]
+    },
+    "Conversation": {
+      "title": "Conversation",
+      "description": "Direct 1-on-1 or Group chat metadata with bounded member list and wrapped group E2EE keys.",
+      "type": "object",
+      "properties": {
+        "conversationType": { "type": "string", "enum": ["DIRECT", "GROUP"], "description": "Chat type." },
+        "title": { "type": "string", "description": "Group name or DM title." },
+        "createdBy": { "type": "string", "description": "Creator UID." },
+        "memberUids": { "type": "array", "description": "Participant UIDs (1..50)." },
+        "adminUids": { "type": "array", "description": "Admin UIDs (1..20)." },
+        "lastMessagePreview": { "type": "string", "description": "Short summary or encrypted preview tag." },
+        "lastMessageType": { "type": "string", "enum": ["NONE", "TEXT", "IMAGE", "VIDEO", "DOCUMENT", "CALL"], "description": "Latest message type." },
+        "lastSenderId": { "type": "string", "description": "UID of last sender." },
+        "wrappedGroupKeys": { "type": "object", "description": "Optional per-member ECDH-wrapped AES group keys." },
+        "memberNames": { "type": "object", "description": "Optional member display name map." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation server timestamp." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Last update server timestamp." }
+      },
+      "required": ["conversationType", "title", "createdBy", "memberUids", "adminUids", "lastMessagePreview", "lastMessageType", "lastSenderId", "createdAt", "updatedAt"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "End-to-end encrypted message or media/document attachment inside a conversation.",
+      "type": "object",
+      "properties": {
+        "conversationId": { "type": "string", "description": "Parent conversation ID." },
+        "senderId": { "type": "string", "description": "Sender Firebase Auth UID." },
+        "senderName": { "type": "string", "description": "Sender display name." },
+        "memberUids": { "type": "array", "description": "Denormalized member UIDs for fast local rule evaluation." },
+        "messageType": { "type": "string", "enum": ["TEXT", "IMAGE", "VIDEO", "DOCUMENT", "CALL"], "description": "Message payload type." },
+        "encryptedPayload": { "type": "string", "description": "AES-256-GCM Base64 ciphertext for message body/caption." },
+        "encrypted": { "type": "boolean", "description": "True when payload is E2EE encrypted." },
+        "attachmentName": { "type": "string", "description": "Optional attachment filename." },
+        "attachmentMime": { "type": "string", "description": "Optional attachment MIME type." },
+        "attachmentSizeBytes": { "type": "integer", "description": "Attachment size in bytes." },
+        "encryptedMediaBase64": { "type": "string", "description": "Optional AES-256-GCM encrypted media/doc bytes in Base64." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation server timestamp." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Last update server timestamp." }
+      },
+      "required": ["conversationId", "senderId", "senderName", "memberUids", "messageType", "encryptedPayload", "encrypted", "attachmentSizeBytes", "createdAt", "updatedAt"]
+    },
+    "StatusUpdate": {
+      "title": "StatusUpdate",
+      "description": "24-hour status story update (text card or photo) visible to signed-in contacts.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Author UID." },
+        "authorName": { "type": "string", "description": "Author display name." },
+        "authorAvatarPreset": { "type": "string", "description": "Author avatar preset." },
+        "statusType": { "type": "string", "enum": ["TEXT", "IMAGE"], "description": "Status type." },
+        "caption": { "type": "string", "description": "Status text or image caption." },
+        "backgroundHex": { "type": "string", "description": "Hex color for text status card." },
+        "imageBase64": { "type": "string", "description": "Optional compressed photo Base64." },
+        "audience": { "type": "string", "enum": ["PUBLIC", "PRIVATE"], "description": "Status visibility scope." },
+        "viewerUids": { "type": "array", "description": "Bounded list of viewer UIDs." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation server timestamp." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Last update server timestamp." }
+      },
+      "required": ["userId", "authorName", "authorAvatarPreset", "statusType", "caption", "backgroundHex", "audience", "viewerUids", "createdAt", "updatedAt"]
+    },
+    "CallSession": {
+      "title": "CallSession",
+      "description": "Real-time audio/video call signaling state with terminal state locking.",
+      "type": "object",
+      "properties": {
+        "callerId": { "type": "string", "description": "Caller UID." },
+        "callerName": { "type": "string", "description": "Caller display name." },
+        "calleeId": { "type": "string", "description": "Callee UID." },
+        "calleeName": { "type": "string", "description": "Callee display name." },
+        "conversationId": { "type": "string", "description": "Associated conversation ID." },
+        "memberUids": { "type": "array", "description": "Exactly 2 participant UIDs." },
+        "callType": { "type": "string", "enum": ["AUDIO", "VIDEO"], "description": "Call media mode." },
+        "status": { "type": "string", "enum": ["RINGING", "ACTIVE", "ENDED", "DECLINED", "MISSED"], "description": "Call lifecycle state." },
+        "qualityTier": { "type": "string", "enum": ["HD_720P", "FHD_1080P", "DATA_SAVER"], "description": "Streaming quality preset." },
+        "e2eeFingerprint": { "type": "string", "description": "Call safety verification fingerprint." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation server timestamp." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Last update server timestamp." }
+      },
+      "required": ["callerId", "callerName", "calleeId", "calleeName", "conversationId", "memberUids", "callType", "status", "qualityTier", "e2eeFingerprint", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users_public/{userId}": {
+      "schema": { "$ref": "UserPublic" },
+      "description": "Public discoverable profiles, online presence, and E2EE public keys."
+    },
+    "/users_private/{userId}": {
+      "schema": { "$ref": "UserPrivate" },
+      "description": "Owner-only PII including email and verified phone number."
+    },
+    "/users/{userId}/contacts/{contactId}": {
+      "schema": { "$ref": "Contact" },
+      "description": "User-scoped friends/contacts list."
+    },
+    "/conversations/{conversationId}": {
+      "schema": { "$ref": "Conversation" },
+      "description": "Direct and group chat metadata."
+    },
+    "/conversations/{conversationId}/messages/{messageId}": {
+      "schema": { "$ref": "ChatMessage" },
+      "description": "E2EE messages and encrypted media/document payloads."
+    },
+    "/status_updates/{statusId}": {
+      "schema": { "$ref": "StatusUpdate" },
+      "description": "Status story updates."
+    },
+    "/calls/{callId}": {
+      "schema": { "$ref": "CallSession" },
+      "description": "Real-time audio/video call signaling sessions."
+    }
+  }
+}

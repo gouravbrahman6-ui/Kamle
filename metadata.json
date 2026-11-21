@@ -1,0 +1,6 @@
+{
+  "name": "CipherChat",
+  "description": "End-to-end encrypted real-time chat, group messaging, media and document sharing, status updates, and HD audio/video calling.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
